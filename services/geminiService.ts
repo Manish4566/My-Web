@@ -2,12 +2,10 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, FinalPrompt } from "../types";
 
-const API_KEY = process.env.API_KEY || "";
-
 export const analyzeVideo = async (videoBase64: string): Promise<AnalysisResult> => {
-  const ai = new GoogleGenAI({ apiKey: API_KEY });
+  // Always create a new instance right before use to get the latest key from the environment
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // Using gemini-3-flash-preview for ultra-fast multimodal processing
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: {
@@ -20,22 +18,12 @@ export const analyzeVideo = async (videoBase64: string): Promise<AnalysisResult>
         },
         {
           text: `QUICK ANALYSIS: Scan this website video immediately. 
-          Identify:
-          1. Pages visible.
-          2. Key UI elements (buttons, forms, sections).
-          3. Structural logic.
-          
-          Return JSON ONLY:
-          {
-            "pages": ["string"],
-            "elements": [{"type": "string", "description": "string", "canEdit": boolean}],
-            "reasoning": ["string"]
-          }`
+          Identify visible pages and UI elements.
+          Return JSON ONLY matching the schema.`
         }
       ]
     },
     config: {
-      // Removing thinkingBudget to prioritize raw speed and low latency
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -66,8 +54,8 @@ export const analyzeVideo = async (videoBase64: string): Promise<AnalysisResult>
       reasoning: data.reasoning || []
     };
   } catch (e) {
-    console.error("Error parsing Gemini response:", e);
-    return { pages: [], elements: [], reasoning: [] };
+    console.error("Gemini Parse Error:", e);
+    throw new Error("Failed to parse AI response. Ensure the video is clear.");
   }
 };
 
@@ -75,20 +63,12 @@ export const generateFinalPrompt = async (
   analysis: AnalysisResult, 
   userInstructions: string
 ): Promise<FinalPrompt> => {
-  const ai = new GoogleGenAI({ apiKey: API_KEY });
-
-  const prompt = `FAST GENERATION: Create a technical EDIT-ONLY prompt.
-  
-  ANALYSIS: ${JSON.stringify(analysis)}
-  USER INSTRUCTIONS: ${userInstructions}
-
-  RULES: No deletions, no full regeneration, preserve structure. Targeted edits only.
-  
-  Return JSON: {"content": "The final prompt text"}`;
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: prompt,
+    contents: `Create a technical EDIT-ONLY prompt based on: ${JSON.stringify(analysis)} 
+               User wants: ${userInstructions}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -103,8 +83,8 @@ export const generateFinalPrompt = async (
 
   try {
     const data = JSON.parse(response.text || "{}");
-    return { content: data.content || "Failed to generate prompt content." };
+    return { content: data.content || "Prompt generation failed." };
   } catch (e) {
-    return { content: "Error parsing generated prompt." };
+    throw new Error("Error generating final prompt.");
   }
 };
