@@ -1,6 +1,6 @@
 {
   "name": "PromptForge AI - Edit-Only Architect",
-  "description": "A premium AI developer tool that analyzes website screen recordings to generate precise, non-destructive edit prompts. It ensures code integrity by focusing on specific modifications without full regeneration or deletions.",
+  "description": "A premium AI developer tool that analyzes website screen recordings to generate precise, non-destructive edit prompts.",
   "requestFramePermissions": [
     "camera",
     "microphone"
