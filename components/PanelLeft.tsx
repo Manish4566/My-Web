@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { AnalysisResult } from '../types';
-import { Brain, Layout, ListChecks, ArrowRight } from 'lucide-react';
+import { Brain, Layout, ListChecks, ArrowRight, Mic } from 'lucide-react';
 
 interface PanelLeftProps {
   isOpen: boolean;
@@ -20,7 +20,7 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
         <div className="p-2 bg-blue-500/10 rounded-lg">
           <Brain className="w-6 h-6 text-blue-400" />
         </div>
-        <h2 className="text-xl font-semibold tracking-tight">AI Thinking / Analysis</h2>
+        <h2 className="text-xl font-semibold tracking-tight">AI Audit & Voice</h2>
       </div>
 
       {loading ? (
@@ -31,6 +31,19 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
         </div>
       ) : analysis ? (
         <div className="space-y-8">
+          {/* NEW: Spoken Intent Section */}
+          <section className="animate-in fade-in slide-in-from-top-2 duration-700">
+            <div className="flex items-center gap-2 mb-3 text-blue-400 text-xs font-bold uppercase tracking-widest">
+              <Mic className="w-4 h-4" />
+              Spoken Instruction
+            </div>
+            <div className={`p-4 rounded-2xl border ${analysis.spokenIntent ? 'bg-blue-500/10 border-blue-500/30 text-white' : 'bg-white/5 border-white/10 text-white/30'}`}>
+              <p className="text-sm italic leading-relaxed">
+                {analysis.spokenIntent ? `"${analysis.spokenIntent}"` : "No spoken instructions detected in audio."}
+              </p>
+            </div>
+          </section>
+
           <section>
             <div className="flex items-center gap-2 mb-3 text-white/50 text-xs font-bold uppercase tracking-widest">
               <Layout className="w-4 h-4" />
@@ -42,20 +55,17 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
                   {page}
                 </span>
               ))}
-              {(!analysis.pages || analysis.pages.length === 0) && (
-                <span className="text-xs text-white/30 italic">No pages detected</span>
-              )}
             </div>
           </section>
 
           <section>
             <div className="flex items-center gap-2 mb-3 text-white/50 text-xs font-bold uppercase tracking-widest">
               <ListChecks className="w-4 h-4" />
-              UI Elements & Logic
+              UI Architecture
             </div>
             <div className="space-y-3">
               {analysis.elements?.map((el, idx) => (
-                <div key={idx} className="p-3 bg-white/5 rounded-lg border border-white/5 hover:border-blue-500/30 transition-colors">
+                <div key={idx} className="p-3 bg-white/5 rounded-lg border border-white/5">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-bold text-blue-400 uppercase">{el.type}</span>
                     {el.canEdit && (
@@ -65,16 +75,13 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
                   <p className="text-sm text-white/70 leading-relaxed">{el.description}</p>
                 </div>
               ))}
-              {(!analysis.elements || analysis.elements.length === 0) && (
-                <div className="text-xs text-white/30 italic">No UI elements identified</div>
-              )}
             </div>
           </section>
 
           <section>
             <div className="flex items-center gap-2 mb-3 text-white/50 text-xs font-bold uppercase tracking-widest">
               <ArrowRight className="w-4 h-4" />
-              Step-by-Step Reasoning
+              Audit Logic
             </div>
             <ul className="space-y-4">
               {analysis.reasoning?.map((step, idx) => (
@@ -83,16 +90,13 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
                   <p className="text-sm text-white/60 leading-relaxed">{step}</p>
                 </li>
               ))}
-              {(!analysis.reasoning || analysis.reasoning.length === 0) && (
-                <li className="text-xs text-white/30 italic">No reasoning provided</li>
-              )}
             </ul>
           </section>
         </div>
       ) : (
         <div className="h-[60vh] flex flex-col items-center justify-center text-center opacity-40">
            <Brain className="w-12 h-12 mb-4" />
-           <p className="text-sm">Upload a video to start analysis</p>
+           <p className="text-sm">Upload a video with audio to start</p>
         </div>
       )}
     </div>

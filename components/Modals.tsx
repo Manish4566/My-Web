@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
-import { HistoryItem, ModalType } from '../types';
-import { X, Clock, User, Zap, Star, Shield, Check, Mail, Loader2, Cloud, Lock, UserCircle, ArrowRight } from 'lucide-react';
-import { auth, googleProvider } from '../services/firebase';
+import React, { useState, useEffect } from 'react';
+import { HistoryItem, ModalType, UserProfile } from '../types';
+import { X, Clock, Zap, Check, Loader2, Lock, ArrowRight, Smartphone, CheckCircle2, ShieldCheck, Database, CreditCard } from 'lucide-react';
+import { auth, googleProvider, rtdb } from '../services/firebase';
+import { ref, set, get, update, onValue } from "firebase/database";
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
@@ -15,322 +16,333 @@ interface ModalProps {
   onClose: () => void;
   history?: HistoryItem[];
   onSelectHistory?: (item: HistoryItem) => void;
-  onSignupSuccess?: (email: string) => void;
 }
 
-const Modal: React.FC<ModalProps> = ({ type, onClose, history, onSelectHistory, onSignupSuccess }) => {
-  const [isLogin, setIsLogin] = useState(true);
-  const [name, setName] = useState('');
+const Modal: React.FC<ModalProps> = ({ 
+  type, 
+  onClose, 
+  history, 
+  onSelectHistory 
+}) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [name, setName] = useState('');
+  const [isLogin, setIsLogin] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastErrorCode, setLastErrorCode] = useState<string | null>(null);
+  
+  // Payment States
+  const [txnId, setTxnId] = useState('');
+  const [paymentStep, setPaymentStep] = useState<'DETAILS' | 'QR' | 'VERIFY' | 'SUCCESS'>('DETAILS');
+  const [currencyData, setCurrencyData] = useState({ code: 'INR', symbol: '₹', amount: 168 });
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    const isIndia = navigator.language.includes('hi') || navigator.language.includes('IN');
+    if (isIndia) {
+      setCurrencyData({ code: 'INR', symbol: '₹', amount: 168 });
+    } else {
+      setCurrencyData({ code: 'USD', symbol: '$', amount: 2 });
+    }
+
+    const user = auth.currentUser;
+    if (user) {
+      const profileRef = ref(rtdb, `users/${user.uid}/profile`);
+      return onValue(profileRef, (snapshot) => {
+        if (snapshot.exists()) {
+          setUserProfile(snapshot.val() as UserProfile);
+        }
+      });
+    }
+  }, []);
 
   if (!type) return null;
 
-  const getErrorMessage = (errorCode: string) => {
-    switch (errorCode) {
-      case 'auth/invalid-credential': 
-        return isLogin 
-          ? 'Authentication failed. Please verify your email and password, or create a new account if you haven’t yet.' 
-          : 'Registration failed. Please ensure your email is valid and you meet password requirements.';
-      case 'auth/user-not-found': return 'No account found with this email. Please click "Sign Up" below.';
-      case 'auth/wrong-password': return 'Incorrect password. Try again or use Google to sign in.';
-      case 'auth/email-already-in-use': return 'An account with this email already exists. Try "Sign In" instead.';
-      case 'auth/weak-password': return 'Password is too weak. Please use at least 6 characters.';
-      case 'auth/invalid-email': return 'The email address provided is not valid.';
-      default: return `Unexpected error: ${errorCode}. Please check your connection or try again.`;
-    }
-  };
-
-  const handleAuthSubmit = async (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
-    if (!isLogin && !name) {
-      setError("Please enter your full name.");
-      setLastErrorCode(null);
-      return;
-    }
-    
-    setIsAuthLoading(true);
+    setLoading(true);
     setError(null);
-    setLastErrorCode(null);
-
     try {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
       } else {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, {
-          displayName: name
+        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCred.user, { displayName: name });
+        await set(ref(rtdb, `users/${userCred.user.uid}/profile`), {
+          name,
+          email,
+          isPro: false,
+          lastLogin: Date.now()
         });
       }
-      onSignupSuccess?.(email);
       onClose();
     } catch (err: any) {
-      console.error("Firebase Auth Error:", err.code, err.message);
-      setLastErrorCode(err.code);
-      setError(getErrorMessage(err.code));
-      setPassword(''); // Clear password on error for security and fresh attempt
+      setError(err.message);
     } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const handleInputChange = (field: 'email' | 'password' | 'name', value: string) => {
-    if (field === 'email') setEmail(value);
-    if (field === 'password') setPassword(value);
-    if (field === 'name') setName(value);
-    
-    // Clear error immediately when user starts typing again
-    if (error) {
-      setError(null);
-      setLastErrorCode(null);
+      setLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
-    setIsAuthLoading(true);
-    setError(null);
-    setLastErrorCode(null);
     try {
       const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        onSignupSuccess?.(result.user.email || 'User');
-        onClose();
+      const user = result.user;
+      const profileRef = ref(rtdb, `users/${user.uid}/profile`);
+      const snapshot = await get(profileRef);
+      if (!snapshot.exists()) {
+        await set(profileRef, {
+          name: user.displayName || 'Anonymous',
+          email: user.email,
+          isPro: false,
+          lastLogin: Date.now()
+        });
       }
+      onClose();
     } catch (err: any) {
-      console.error("Google Auth Error:", err.code, err.message);
-      setLastErrorCode(err.code);
-      setError(getErrorMessage(err.code));
-    } finally {
-      setIsAuthLoading(false);
+      setError(err.message);
     }
   };
 
-  const toggleAuthMode = () => {
-    setIsLogin(!isLogin);
-    setError(null);
-    setLastErrorCode(null);
+  const handlePaymentVerify = async () => {
+    if (txnId.length < 8) {
+      setError("Please enter a valid 12-digit UPI Transaction ID.");
+      return;
+    }
+    setLoading(true);
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      const expiryDate = Date.now() + (30 * 24 * 60 * 60 * 1000); 
+      const paymentData = {
+        isPro: true,
+        subscriptionExpiry: expiryDate,
+        paidAmount: `${currencyData.symbol}${currencyData.amount}`,
+        currency: currencyData.code,
+        txnId: txnId,
+        paymentDate: Date.now()
+      };
+
+      await update(ref(rtdb, `users/${user.uid}/profile`), paymentData);
+      await set(ref(rtdb, `payments/${txnId}`), {
+        ...paymentData,
+        uid: user.uid,
+        userName: user.displayName || user.email?.split('@')[0],
+        userEmail: user.email
+      });
+
+      setPaymentStep('SUCCESS');
+    } catch (err: any) {
+      setError("Verification failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div 
-        className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" 
-        onClick={onClose} 
-      />
-      
-      <div className="relative w-full max-w-2xl bg-[#0c0c0c] border border-white/10 rounded-[32px] shadow-[0_0_100px_rgba(0,0,0,0.5)] overflow-hidden animate-in zoom-in-95 duration-300">
-        <div className="p-8">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold capitalize flex items-center gap-3">
-              {type === 'history' && <Clock className="text-blue-400" />}
-              {type === 'signup' && (isLogin ? <User className="text-blue-400" /> : <Zap className="text-purple-400" />)}
-              {type === 'upgrade' && <Zap className="text-yellow-400" />}
-              {type === 'signup' ? (isLogin ? 'Sign In' : 'Create Account') : type}
-            </h2>
+  const renderHistory = () => (
+    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+      <div className="flex items-center gap-2 text-[10px] font-bold text-white/30 uppercase tracking-[0.2em] mb-4 px-2">
+        <Clock className="w-3 h-3" /> Recent Forge Sessions
+      </div>
+      {history && history.length > 0 ? (
+        history.map((item) => (
+          <div 
+            key={item.id} 
+            onClick={() => onSelectHistory?.(item)}
+            className="p-5 bg-white/5 border border-white/10 rounded-[24px] hover:bg-white/10 hover:border-blue-500/30 transition-all cursor-pointer group animate-in fade-in slide-in-from-bottom-2"
+          >
+            <div className="flex justify-between items-start mb-3">
+              <div className="text-[10px] text-white/30 uppercase tracking-widest font-bold">
+                {new Date(item.timestamp).toLocaleDateString()}
+              </div>
+              <div className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full text-[9px] font-black uppercase tracking-wider">
+                {item.analysis.pages.length} Screens
+              </div>
+            </div>
+            <p className="text-sm font-medium text-white/80 group-hover:text-white line-clamp-2 leading-relaxed italic">
+              "{item.instructions}"
+            </p>
+            <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
+               <span className="text-[9px] text-white/20 uppercase font-bold tracking-widest">{item.userName}</span>
+               <ArrowRight className="w-3 h-3 text-white/20 group-hover:text-blue-400 transition-colors" />
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="py-20 text-center opacity-20">
+          <Clock className="w-16 h-16 mx-auto mb-4" />
+          <p className="text-sm font-bold uppercase tracking-widest">Empty Forge</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderAuth = () => (
+    <div className="space-y-8 animate-in fade-in duration-300">
+      <div className="text-center">
+        <div className="w-20 h-20 bg-blue-500/10 rounded-[30px] flex items-center justify-center mx-auto mb-6">
+          <Lock className="w-10 h-10 text-blue-400" />
+        </div>
+        <h3 className="text-2xl font-bold">{isLogin ? 'Welcome Back' : 'Create Account'}</h3>
+      </div>
+      <form onSubmit={handleAuth} className="space-y-4">
+        {!isLogin && (
+          <input 
+            type="text" required value={name} onChange={(e) => setName(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:outline-none focus:border-blue-500/50" 
+            placeholder="Full Name"
+          />
+        )}
+        <input 
+          type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+          className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:outline-none focus:border-blue-500/50" 
+          placeholder="Email Address"
+        />
+        <input 
+          type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+          className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:outline-none focus:border-blue-500/50" 
+          placeholder="Password"
+        />
+        {error && <div className="text-red-400 text-xs text-center">{error}</div>}
+        <button type="submit" disabled={loading} className="w-full py-4 bg-white text-black rounded-2xl font-black text-lg hover:bg-blue-400 hover:text-white transition-all">
+          {loading ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : isLogin ? 'Sign In' : 'Create Account'}
+        </button>
+      </form>
+      <button onClick={handleGoogleSignIn} className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-white/10 transition-all">
+        <Smartphone className="w-5 h-5" /> Google Account
+      </button>
+      <div className="text-center">
+        <button onClick={() => setIsLogin(!isLogin)} className="text-white/40 hover:text-blue-400 text-sm">
+          {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderUpgrade = () => (
+    <div className="space-y-8 animate-in zoom-in-95 duration-300">
+      <div className="text-center">
+        <div className="w-20 h-20 bg-yellow-500/10 rounded-[30px] flex items-center justify-center mx-auto mb-6">
+          <Zap className="w-10 h-10 text-yellow-400" />
+        </div>
+        <h3 className="text-3xl font-bold">Forge Pro</h3>
+        <p className="text-white/40 text-sm mt-2">Get 1 Month of Unlimited AI Audits</p>
+      </div>
+      <div className="p-8 bg-gradient-to-br from-white/10 to-transparent border border-white/10 rounded-[40px] text-center shadow-2xl relative overflow-hidden group">
+        <div className="text-xs font-bold text-white/40 uppercase tracking-[0.2em] mb-2">30 Day Access</div>
+        <div className="text-6xl font-black mb-1">{currencyData.symbol}{currencyData.amount}</div>
+        <div className="text-[10px] text-white/20 uppercase font-black tracking-widest mt-2">One-time payment</div>
+      </div>
+      <div className="grid gap-3">
+        {[
+          { icon: <ShieldCheck className="w-4 h-4 text-green-400" />, title: 'Gemini 3 Pro Engine' },
+          { icon: <CheckCircle2 className="w-4 h-4 text-purple-400" />, title: 'Priority Forge Queue' }
+        ].map((feat, i) => (
+          <div key={i} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5">
+            {feat.icon}
+            <span className="text-xs font-semibold text-white/70">{feat.title}</span>
+          </div>
+        ))}
+      </div>
+      <button 
+        onClick={() => setPaymentStep('QR')}
+        className="w-full py-5 bg-white text-black rounded-[24px] font-black text-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"
+      >
+        Upgrade Now <ArrowRight className="w-6 h-6" />
+      </button>
+    </div>
+  );
+
+  const renderPayment = () => (
+    <div className="space-y-8 text-center animate-in slide-in-from-right-4 duration-500">
+      {paymentStep === 'QR' && (
+        <>
+          <div className="space-y-2">
+            <h3 className="text-2xl font-bold tracking-tight">Scan & Pay {currencyData.symbol}{currencyData.amount}</h3>
+            <p className="text-sm text-white/40 italic">Account valid for exactly 1 month</p>
+          </div>
+          <div className="p-6 bg-white rounded-[40px] mx-auto w-fit shadow-[0_0_80px_rgba(255,255,255,0.15)] border-4 border-white/10">
+            <div className="w-60 h-60 bg-white flex items-center justify-center rounded-2xl overflow-hidden">
+               <img 
+                 src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa=mab.037322044320156@axisbank%26pn=PROMPT%20FORGE%26am=${currencyData.amount}%26cu=INR`} 
+                 alt="PhonePe Payment QR" 
+                 className="w-full h-full p-2"
+               />
+            </div>
+          </div>
+          <div className="flex flex-col gap-5 px-4">
+            <div className="flex items-center justify-center gap-3 px-6 py-2 bg-white/5 rounded-full border border-white/10 w-fit mx-auto">
+              <ShieldCheck className="w-4 h-4 text-green-400" />
+              <span className="text-[10px] text-white/50 uppercase font-black tracking-widest">Secure UPI Payment</span>
+            </div>
+            <p className="text-xs text-white/40 leading-relaxed max-w-[280px] mx-auto">
+              Open PhonePe, GPay, or Paytm to scan. Direct payment ensures immediate processing.
+            </p>
             <button 
-              onClick={onClose}
-              className="p-2 hover:bg-white/5 rounded-full transition-colors"
+              onClick={() => setPaymentStep('VERIFY')}
+              className="w-full py-5 bg-blue-600 text-white rounded-[24px] font-black text-lg hover:bg-blue-500 transition-all shadow-xl active:scale-95"
             >
-              <X className="w-6 h-6" />
+              I have paid
             </button>
           </div>
-
-          <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-            {type === 'history' && (
-              <div className="space-y-4">
-                {history && history.length > 0 ? (
-                  history.map((item) => (
-                    <div 
-                      key={item.id}
-                      onClick={() => onSelectHistory?.(item)}
-                      className="group p-5 bg-white/5 border border-white/5 rounded-2xl cursor-pointer hover:border-blue-500/30 hover:bg-white/[0.08] transition-all"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex flex-col">
-                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-white/30">
-                              {new Date(item.timestamp).toLocaleString()}
-                            </span>
-                            <Cloud className="w-3 h-3 text-blue-500/40" />
-                          </div>
-                          {item.userName && (
-                            <span className="text-[10px] text-white/20 mt-1">Generated by: {item.userName}</span>
-                          )}
-                        </div>
-                        <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full uppercase font-bold">
-                          {item.analysis.pages.length} Pages
-                        </span>
-                      </div>
-                      <p className="text-sm text-white/70 line-clamp-2 italic">
-                        "{item.instructions}"
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="py-20 text-center text-white/20">
-                    <Clock className="w-12 h-12 mx-auto mb-4 opacity-10" />
-                    <p>No history found. Complete an analysis to see it here.</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {type === 'signup' && (
-              <div className="space-y-6">
-                <form onSubmit={handleAuthSubmit} className="space-y-4">
-                  {error && (
-                    <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl animate-in fade-in slide-in-from-top-1 flex flex-col gap-2">
-                      <div className="flex gap-3 items-center">
-                        <Lock className="w-4 h-4 shrink-0" />
-                        <span className="font-medium">{error}</span>
-                      </div>
-                      
-                      {/* ACTION: Switch to Sign In if email is taken */}
-                      {lastErrorCode === 'auth/email-already-in-use' && (
-                        <button 
-                          type="button"
-                          onClick={() => { setIsLogin(true); setError(null); setLastErrorCode(null); }}
-                          className="text-left ml-7 text-blue-400 hover:text-blue-300 hover:underline font-bold flex items-center gap-1 mt-1 transition-colors"
-                        >
-                          I have an account, sign me in <ArrowRight className="w-3 h-3" />
-                        </button>
-                      )}
-
-                      {/* ACTION: Switch to Sign Up if login fails */}
-                      {lastErrorCode === 'auth/invalid-credential' && isLogin && (
-                        <button 
-                          type="button"
-                          onClick={() => { setIsLogin(false); setError(null); setLastErrorCode(null); }}
-                          className="text-left ml-7 text-purple-400 hover:text-purple-300 hover:underline font-bold flex items-center gap-1 mt-1 transition-colors"
-                        >
-                          Need an account? Sign up here <ArrowRight className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <div className="space-y-4">
-                    {!isLogin && (
-                      <div className="space-y-1.5 animate-in slide-in-from-left-2">
-                        <label className="text-xs font-bold uppercase tracking-wider text-white/40 ml-1">Full Name</label>
-                        <div className="relative">
-                          <UserCircle className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-                          <input 
-                            type="text" 
-                            required
-                            value={name}
-                            onChange={(e) => handleInputChange('name', e.target.value)}
-                            placeholder="John Doe" 
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 focus:outline-none focus:border-purple-500/50 transition-all text-white"
-                          />
-                        </div>
-                      </div>
-                    )}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-white/40 ml-1">Email Address</label>
-                      <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
-                        <input 
-                          type="email" 
-                          required
-                          value={email}
-                          onChange={(e) => handleInputChange('email', e.target.value)}
-                          placeholder="name@company.com" 
-                          className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 focus:outline-none focus:border-blue-500/50 transition-all text-white"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold uppercase tracking-wider text-white/40 ml-1">Password</label>
-                      <input 
-                        type="password" 
-                        required
-                        value={password}
-                        onChange={(e) => handleInputChange('password', e.target.value)}
-                        placeholder="••••••••" 
-                        className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 focus:outline-none focus:border-blue-500/50 transition-all text-white"
-                      />
-                    </div>
-                  </div>
-                  <button 
-                    type="submit"
-                    disabled={isAuthLoading}
-                    className={`w-full font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${
-                      isLogin 
-                        ? 'bg-white text-black hover:bg-gray-200' 
-                        : 'bg-purple-600 text-white hover:bg-purple-500 shadow-[0_0_20px_rgba(147,51,234,0.3)]'
-                    }`}
-                  >
-                    {isAuthLoading && <Loader2 className="w-5 h-5 animate-spin" />}
-                    {isAuthLoading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
-                  </button>
-                  
-                  <p className="text-center text-sm text-white/40">
-                    {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
-                    <button 
-                      type="button"
-                      onClick={toggleAuthMode}
-                      className={`${isLogin ? 'text-purple-400' : 'text-blue-400'} hover:underline font-semibold`}
-                    >
-                      {isLogin ? 'Sign Up for Free' : 'Sign In instead'}
-                    </button>
-                  </p>
-                </form>
-
-                <div className="relative py-2">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/5"></div></div>
-                  <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#0c0c0c] px-2 text-white/20">Fast Access</span></div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                  <button 
-                    type="button" 
-                    onClick={handleGoogleSignIn}
-                    disabled={isAuthLoading}
-                    className="flex items-center justify-center gap-3 py-3 border border-white/10 rounded-xl hover:bg-white/5 transition-all text-sm font-medium"
-                  >
-                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" className="w-5 h-5" alt="Google" />
-                    Continue with Google
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {type === 'upgrade' && (
-              <div className="space-y-8">
-                <div className="bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/20 p-6 rounded-3xl">
-                  <div className="flex items-center gap-3 mb-2 text-yellow-500 font-bold uppercase tracking-tighter italic text-xl">
-                    <Star className="w-6 h-6 fill-current" />
-                    Pro Access
-                  </div>
-                  <p className="text-white/60 text-sm mb-6 leading-relaxed">
-                    Unlock the full potential of PromptForge with advanced models and team tools.
-                  </p>
-                  <div className="text-4xl font-black text-white mb-6">$2<span className="text-lg font-normal text-white/40">/mo</span></div>
-                  <button className="w-full bg-yellow-500 text-black font-black py-4 rounded-xl hover:bg-yellow-400 transition-transform active:scale-95 shadow-[0_0_30px_rgba(234,179,8,0.2)]">
-                    Upgrade Now
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {[
-                    { title: 'Unlimited Video Analysis', icon: <Zap className="w-4 h-4 text-yellow-500" /> },
-                    { title: 'Gemini 3 Pro Access', icon: <Star className="w-4 h-4 text-blue-500" /> },
-                    { title: 'Advanced Edit-Only Rules', icon: <Shield className="w-4 h-4 text-green-500" /> },
-                    { title: 'Prompt History Export', icon: <Check className="w-4 h-4 text-purple-500" /> },
-                  ].map((feat, i) => (
-                    <div key={i} className="flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/5">
-                      <div className="p-2 bg-black rounded-lg">{feat.icon}</div>
-                      <span className="text-sm font-medium text-white/80">{feat.title}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+        </>
+      )}
+      {paymentStep === 'VERIFY' && (
+        <div className="space-y-8 py-4">
+          <div className="text-center space-y-2">
+            <h3 className="text-2xl font-bold">Verification</h3>
+            <p className="text-sm text-white/40">Enter the 12-digit UPI Transaction ID</p>
           </div>
+          <input 
+            type="text" 
+            value={txnId} 
+            onChange={(e) => setTxnId(e.target.value.toUpperCase())}
+            className="w-full bg-white/5 border-2 border-white/10 rounded-[24px] px-8 py-6 text-center text-3xl font-mono focus:outline-none focus:border-blue-500 transition-all uppercase"
+            placeholder="TXN..."
+            maxLength={12}
+          />
+          {error && <div className="text-red-400 text-sm font-bold">{error}</div>}
+          <button 
+            onClick={handlePaymentVerify} disabled={loading}
+            className="w-full py-5 bg-white text-black rounded-[24px] font-black text-xl flex items-center justify-center gap-3"
+          >
+            {loading ? <Loader2 className="w-7 h-7 animate-spin" /> : 'Confirm Payment'}
+          </button>
+          <button onClick={() => setPaymentStep('QR')} className="text-white/20 text-[10px] uppercase font-bold hover:text-white transition-colors tracking-widest underline">Back to QR</button>
+        </div>
+      )}
+      {paymentStep === 'SUCCESS' && (
+        <div className="py-12 space-y-8 animate-in zoom-in-95 duration-700">
+          <div className="relative mx-auto w-32 h-32">
+            <div className="absolute inset-0 bg-green-500/20 rounded-full animate-ping"></div>
+            <div className="relative w-32 h-32 bg-green-500/30 rounded-full flex items-center justify-center border-4 border-green-500/50">
+              <Check className="w-16 h-16 text-green-400" />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <h3 className="text-4xl font-black text-white">Successful!</h3>
+            <p className="text-white/50 font-medium">Your Pro account is now active for 30 days.</p>
+          </div>
+          <button onClick={onClose} className="w-full py-5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-[24px] font-black text-lg transition-all">
+            Continue to Dashboard
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="w-full max-w-lg bg-[#0c0c0c] border border-white/10 rounded-[48px] shadow-2xl relative overflow-hidden p-8 md:p-14">
+        <div className="absolute -top-24 -left-24 w-64 h-64 bg-blue-500/10 blur-[100px] pointer-events-none"></div>
+        <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-purple-500/10 blur-[100px] pointer-events-none"></div>
+        <button onClick={onClose} className="absolute top-10 right-10 p-3 hover:bg-white/5 rounded-full text-white/30 hover:text-white transition-all z-[110]">
+          <X className="w-6 h-6" />
+        </button>
+        <div className="relative z-10">
+          {type === 'history' && renderHistory()}
+          {type === 'signup' && renderAuth()}
+          {type === 'upgrade' && (paymentStep === 'DETAILS' ? renderUpgrade() : renderPayment())}
         </div>
       </div>
     </div>

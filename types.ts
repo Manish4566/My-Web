@@ -7,17 +7,29 @@ export interface AnalysisResult {
     canEdit: boolean;
   }[];
   reasoning: string[];
+  spokenIntent?: string;
 }
 
 export interface FinalPrompt {
   content: string;
 }
 
+export interface UserProfile {
+  name: string;
+  email: string;
+  isPro: boolean;
+  subscriptionExpiry?: number;
+  paidAmount?: string;
+  currency?: string;
+  txnId?: string;
+  lastLogin: number;
+}
+
 export interface HistoryItem {
   id: string;
   timestamp: number;
-  userName?: string; // User who generated this
-  videoUrl?: string; // Reference to the video
+  userName?: string;
+  videoUrl?: string;
   instructions: string;
   analysis: AnalysisResult;
   prompt: FinalPrompt;
@@ -31,4 +43,4 @@ export enum AppStatus {
   COMPLETED = 'COMPLETED'
 }
 
-export type ModalType = 'history' | 'signup' | 'upgrade' | null;
+export type ModalType = 'history' | 'signup' | 'upgrade' | 'payment' | null;
