@@ -7,10 +7,9 @@ import UploadCircle from './components/UploadCircle';
 import Modal from './components/Modals';
 import { analyzeVideo, generateFinalPrompt } from './services/geminiService';
 import { saveToHistory, getHistory } from './services/historyService';
-import { auth, rtdb } from './services/firebase';
+import { auth } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { ref, set } from 'firebase/database';
-import { Zap, Clock, User, LogOut, Cloud, Key, ExternalLink, ShieldAlert } from 'lucide-react';
+import { Zap, LogOut, Cloud, Key, ExternalLink, ShieldAlert, Send } from 'lucide-react';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
@@ -24,7 +23,7 @@ const App: React.FC = () => {
   const [lastVideoBase64, setLastVideoBase64] = useState<string | null>(null);
   
   // API Key State
-  const [hasApiKey, setHasApiKey] = useState<boolean>(true); // Default to true, will check on mount
+  const [hasApiKey, setHasApiKey] = useState<boolean>(true);
   const [checkingKey, setCheckingKey] = useState(true);
 
   // Auth state
@@ -60,7 +59,7 @@ const App: React.FC = () => {
   const handleSelectKey = async () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
-      setHasApiKey(true); // Proceed assuming success as per guidelines
+      setHasApiKey(true);
     }
   };
 
@@ -81,7 +80,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.error(error);
       setStatus(AppStatus.IDLE);
-      alert("API Error: Check your Gemini API Key and Quota.");
+      alert("API Error: Please check your Gemini API key and internet connection.");
     }
   };
 
@@ -103,7 +102,7 @@ const App: React.FC = () => {
       setInstructions('');
     } catch (error) {
       setStatus(AppStatus.READY_FOR_PROMPT);
-      alert("Generation failed. Try again.");
+      alert("Generation failed. Please try again.");
     }
   };
 
@@ -119,27 +118,18 @@ const App: React.FC = () => {
           <div className="space-y-3">
             <h1 className="text-3xl font-bold">API Connection Required</h1>
             <p className="text-white/50 text-sm leading-relaxed">
-              To use PromptForge AI, you need to connect your Google Gemini API Key. This ensures high-speed, unlimited analysis.
+              To use PromptForge AI on a public server, you must connect your own Gemini API Key.
             </p>
           </div>
-          
-          <div className="space-y-4">
-            <button 
-              onClick={handleSelectKey}
-              className="w-full py-4 bg-white text-black rounded-2xl font-black text-lg hover:bg-blue-400 hover:text-white transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)] active:scale-95"
-            >
-              Connect API Key
-            </button>
-            <a 
-              href="https://ai.google.dev/gemini-api/docs/billing" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 text-xs text-white/30 hover:text-white transition-colors"
-            >
-              Learn about billing and project setup <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-
+          <button 
+            onClick={handleSelectKey}
+            className="w-full py-4 bg-white text-black rounded-2xl font-black text-lg hover:bg-blue-400 hover:text-white transition-all shadow-[0_0_30px_rgba(255,255,255,0.1)] active:scale-95"
+          >
+            Connect API Key
+          </button>
+          <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="flex items-center justify-center gap-2 text-xs text-white/30 hover:text-white transition-colors">
+            Learn about billing <ExternalLink className="w-3 h-3" />
+          </a>
           <div className="pt-6 border-t border-white/5 flex items-center gap-3 justify-center text-[10px] text-white/20 uppercase font-bold tracking-widest">
             <ShieldAlert className="w-3 h-3" /> Secure AI Studio Bridge
           </div>
@@ -204,28 +194,45 @@ const App: React.FC = () => {
             videoLoaded={!!analysis}
           />
 
-          <div className="w-full space-y-4">
+          {/* Unified Input Container */}
+          <div className="w-full bg-[#0c0c0c] border border-white/10 rounded-[32px] p-2 flex flex-col focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/20 transition-all shadow-2xl relative overflow-hidden group">
             <textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              placeholder="Tell the AI what to change..."
-              className="w-full h-40 bg-[#0c0c0c] border border-white/10 rounded-2xl p-6 text-sm focus:border-blue-500/50 resize-none transition-all shadow-xl"
+              placeholder={analysis ? "Describe the changes you need..." : "Upload a screen recording first..."}
+              className="w-full h-32 bg-transparent p-6 text-sm resize-none focus:outline-none placeholder:text-white/20"
               disabled={status === AppStatus.ANALYZING || !analysis}
             />
-            <button
-              onClick={handleGeneratePrompt}
-              disabled={!instructions.trim() || status === AppStatus.ANALYZING || status === AppStatus.GENERATING_PROMPT}
-              className="w-full py-4 bg-white text-black rounded-2xl font-bold hover:bg-blue-400 hover:text-white transition-all flex items-center justify-center gap-2"
-            >
-              <Zap className="w-4 h-4" /> Generate Prompt
-            </button>
+            <div className="flex items-center justify-between p-2 pl-6">
+              <span className="text-[10px] uppercase tracking-widest text-white/20 font-bold">
+                {instructions.length} characters
+              </span>
+              <button
+                onClick={handleGeneratePrompt}
+                disabled={!instructions.trim() || status === AppStatus.ANALYZING || status === AppStatus.GENERATING_PROMPT}
+                className="px-8 py-3 bg-white text-black rounded-2xl font-bold hover:bg-blue-400 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all flex items-center gap-3 shadow-lg active:scale-95"
+              >
+                {status === AppStatus.GENERATING_PROMPT ? (
+                   <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" /> Thinking...</span>
+                ) : (
+                  <><Zap className="w-4 h-4" /> Generate Prompt</>
+                )}
+              </button>
+            </div>
+            
+            {/* Status Overlay */}
+            {!analysis && status !== AppStatus.ANALYZING && (
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center pointer-events-none transition-opacity duration-300">
+                 <p className="text-xs font-bold uppercase tracking-widest text-white/40">Upload Recording to Unlock</p>
+              </div>
+            )}
           </div>
         </div>
       </main>
 
       <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex gap-4 z-50">
-          <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase transition-all border ${isLeftOpen ? 'bg-blue-500 border-blue-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Analysis</button>
-          <button onClick={() => setIsRightOpen(!isRightOpen)} className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase transition-all border ${isRightOpen ? 'bg-purple-500 border-purple-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Prompt</button>
+          <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase transition-all border ${isLeftOpen ? 'bg-blue-500 border-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.3)]' : 'bg-white/5 border-white/10 text-white/40'}`}>Analysis</button>
+          <button onClick={() => setIsRightOpen(!isRightOpen)} className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase transition-all border ${isRightOpen ? 'bg-purple-500 border-purple-400 shadow-[0_0_20px_rgba(168,85,247,0.3)]' : 'bg-white/5 border-white/10 text-white/40'}`}>Prompt</button>
       </div>
     </div>
   );
