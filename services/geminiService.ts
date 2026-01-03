@@ -3,12 +3,17 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, FinalPrompt } from "../types";
 
 // Create a helper to get a fresh AI instance with the latest key
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getAI = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey || apiKey === "undefined" || apiKey === "") {
+    throw new Error("API_KEY_MISSING");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 export const analyzeVideo = async (videoBase64: string): Promise<AnalysisResult> => {
-  const ai = getAI();
-  
   try {
+    const ai = getAI();
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [
@@ -69,7 +74,7 @@ export const analyzeVideo = async (videoBase64: string): Promise<AnalysisResult>
     };
   } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
-    if (error.message?.includes("Requested entity was not found")) {
+    if (error.message === "API_KEY_MISSING" || error.message?.includes("Requested entity was not found")) {
       throw new Error("API_KEY_INVALID");
     }
     throw new Error("Failed to analyze video. Please check your API key and connection.");
@@ -80,9 +85,8 @@ export const generateFinalPrompt = async (
   analysis: AnalysisResult, 
   userInstructions: string
 ): Promise<FinalPrompt> => {
-  const ai = getAI();
-
   try {
+    const ai = getAI();
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [
@@ -117,6 +121,7 @@ export const generateFinalPrompt = async (
     return { content: data.content || "Prompt generation failed." };
   } catch (error: any) {
     console.error("Gemini Prompt Gen Error:", error);
+    if (error.message === "API_KEY_MISSING") throw new Error("API_KEY_INVALID");
     throw new Error("Error generating final prompt.");
   }
 };

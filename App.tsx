@@ -32,11 +32,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkKey = async () => {
+      // 1. Check process.env directly
+      const envKey = process.env.API_KEY;
+      const isKeyPresent = envKey && envKey !== "undefined" && envKey !== "";
+
       if (window.aistudio) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        setHasApiKey(hasKey);
+        const hasSelected = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(hasSelected || !!isKeyPresent);
       } else {
-        setHasApiKey(true);
+        setHasApiKey(!!isKeyPresent);
       }
       setCheckingKey(false);
     };
@@ -66,6 +70,9 @@ const App: React.FC = () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
       setHasApiKey(true);
+    } else {
+      // For standalone mobile browsers, we guide them or alert if they aren't in the right environment
+      alert("Please open this app in Google AI Studio or set the API_KEY environment variable.");
     }
   };
 
@@ -84,9 +91,13 @@ const App: React.FC = () => {
       }, lastVideoBase64 || undefined);
       setHistoryItems(prev => [newItem, ...prev]);
     } catch (error: any) {
-      setStatus(AppStatus.READY_FOR_PROMPT);
-      console.error(error);
-      alert(error.message);
+      if (error.message === "API_KEY_INVALID") {
+        setHasApiKey(false);
+        setStatus(AppStatus.IDLE);
+      } else {
+        alert(error.message);
+        setStatus(AppStatus.READY_FOR_PROMPT);
+      }
     }
   };
 
@@ -96,7 +107,7 @@ const App: React.FC = () => {
       setIsLeftOpen(true);
       setPrompt(null);
       setAnalysis(null);
-      setInstructions(''); // Reset previous instructions
+      setInstructions('');
       
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -108,7 +119,6 @@ const App: React.FC = () => {
           setAnalysis(result);
           analysisRef.current = result;
 
-          // If speech was found, pre-fill the text box, but DO NOT auto-generate
           if (result.spokenIntent && result.spokenIntent.trim().length > 0) {
             setInstructions(result.spokenIntent);
           }
@@ -150,6 +160,12 @@ const App: React.FC = () => {
           <button onClick={handleSelectKey} className="w-full py-4 bg-white text-black rounded-2xl font-black text-lg hover:bg-blue-400 hover:text-white transition-all transform active:scale-95 shadow-xl">
             Connect API Key
           </button>
+          <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+            <p className="text-[10px] text-white/30 uppercase tracking-widest font-bold">Important</p>
+            <p className="text-[11px] text-white/40 mt-1 leading-relaxed">
+              Ensure you have billing enabled on your Google Cloud project.
+            </p>
+          </div>
         </div>
       </div>
     );
