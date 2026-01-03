@@ -32,7 +32,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkKey = async () => {
-      // 1. Check process.env directly
       const envKey = process.env.API_KEY;
       const isKeyPresent = envKey && envKey !== "undefined" && envKey !== "";
 
@@ -69,9 +68,9 @@ const App: React.FC = () => {
   const handleSelectKey = async () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
+      // Proceed immediately to minimize race conditions
       setHasApiKey(true);
     } else {
-      // For standalone mobile browsers, we guide them or alert if they aren't in the right environment
       alert("Please open this app in Google AI Studio or set the API_KEY environment variable.");
     }
   };
@@ -91,8 +90,8 @@ const App: React.FC = () => {
       }, lastVideoBase64 || undefined);
       setHistoryItems(prev => [newItem, ...prev]);
     } catch (error: any) {
-      if (error.message === "API_KEY_INVALID") {
-        setHasApiKey(false);
+      if (error.message === "API_KEY_INVALID" || error.message?.includes("Requested entity was not found")) {
+        setHasApiKey(false); // Reset and show Gate
         setStatus(AppStatus.IDLE);
       } else {
         alert(error.message);
@@ -125,8 +124,8 @@ const App: React.FC = () => {
           
           setStatus(AppStatus.READY_FOR_PROMPT);
         } catch (error: any) {
-          if (error.message === "API_KEY_INVALID") {
-            setHasApiKey(false);
+          if (error.message === "API_KEY_INVALID" || error.message?.includes("Requested entity was not found")) {
+            setHasApiKey(false); // Reset and show Gate
             setStatus(AppStatus.IDLE);
           } else {
             alert(error.message);
@@ -163,7 +162,7 @@ const App: React.FC = () => {
           <div className="bg-white/5 p-4 rounded-xl border border-white/5">
             <p className="text-[10px] text-white/30 uppercase tracking-widest font-bold">Important</p>
             <p className="text-[11px] text-white/40 mt-1 leading-relaxed">
-              Ensure you have billing enabled on your Google Cloud project.
+              Ensure you have billing enabled on your Google Cloud project. If your previous selection failed, try a different project key.
             </p>
           </div>
         </div>
