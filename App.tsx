@@ -10,7 +10,7 @@ import { saveToHistory, getHistory } from './services/historyService';
 import { auth, rtdb } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, onValue } from 'firebase/database';
-import { Zap, LogOut, Cloud, Key, Info, Mic, CheckCircle2 } from 'lucide-react';
+import { Zap, LogOut, Cloud, Key, Info, Mic, CheckCircle2, MicOff } from 'lucide-react';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
@@ -36,7 +36,6 @@ const App: React.FC = () => {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         setHasApiKey(hasKey);
       } else {
-        // If not in AI Studio environment, assume process.env.API_KEY is handled externally
         setHasApiKey(true);
       }
       setCheckingKey(false);
@@ -66,7 +65,6 @@ const App: React.FC = () => {
   const handleSelectKey = async () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
-      // Assume success after triggering the dialog to avoid race conditions
       setHasApiKey(true);
     }
   };
@@ -80,7 +78,7 @@ const App: React.FC = () => {
       setStatus(AppStatus.COMPLETED);
 
       const newItem = await saveToHistory({
-        instructions: manualInstructions || currentAnalysis.spokenIntent || "Auto-detected from audio",
+        instructions: manualInstructions || currentAnalysis.spokenIntent || "Visual Audit",
         analysis: currentAnalysis,
         prompt: finalResult
       }, lastVideoBase64 || undefined);
@@ -98,6 +96,7 @@ const App: React.FC = () => {
       setIsLeftOpen(true);
       setPrompt(null);
       setAnalysis(null);
+      setInstructions(''); // Reset previous instructions
       
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -109,12 +108,12 @@ const App: React.FC = () => {
           setAnalysis(result);
           analysisRef.current = result;
 
-          if (result.spokenIntent && result.spokenIntent.trim().length > 5) {
+          // If speech was found, pre-fill the text box, but DO NOT auto-generate
+          if (result.spokenIntent && result.spokenIntent.trim().length > 0) {
             setInstructions(result.spokenIntent);
-            await triggerPromptGeneration(result, "");
-          } else {
-            setStatus(AppStatus.READY_FOR_PROMPT);
           }
+          
+          setStatus(AppStatus.READY_FOR_PROMPT);
         } catch (error: any) {
           if (error.message === "API_KEY_INVALID") {
             setHasApiKey(false);
@@ -146,16 +145,8 @@ const App: React.FC = () => {
           </div>
           <div className="space-y-3">
             <h1 className="text-3xl font-bold tracking-tight">API Key Required</h1>
-            <p className="text-white/40 text-sm">To analyze video and generate architectural prompts, you must connect a paid Google Cloud Project API Key.</p>
+            <p className="text-white/40 text-sm">Connect a paid Google Cloud Project API Key to enable multimodal video analysis.</p>
           </div>
-          
-          <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex gap-3 text-left">
-            <Info className="w-5 h-5 text-blue-400 shrink-0" />
-            <p className="text-[11px] text-white/50 leading-relaxed">
-              Gemini 3 Flash multimodal tasks require billing setup. Visit <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-blue-400 underline">billing docs</a> for more info.
-            </p>
-          </div>
-
           <button onClick={handleSelectKey} className="w-full py-4 bg-white text-black rounded-2xl font-black text-lg hover:bg-blue-400 hover:text-white transition-all transform active:scale-95 shadow-xl">
             Connect API Key
           </button>
@@ -231,17 +222,23 @@ const App: React.FC = () => {
             <textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              placeholder={analysis ? "Describe changes or system will use voice audio..." : "Upload recording with voice instruction..."}
+              placeholder={analysis ? "Type your edit instructions here..." : "Upload a recording first to enable prompt generation..."}
               className="w-full h-32 bg-transparent p-6 text-sm resize-none focus:outline-none placeholder:text-white/20"
               disabled={status === AppStatus.ANALYZING || !analysis}
             />
             <div className="flex items-center justify-between p-2 pl-6">
               <span className="text-[10px] uppercase tracking-widest text-white/20 font-bold flex items-center gap-2">
-                {analysis?.spokenIntent ? <><Mic className="w-3 h-3 text-blue-400" /> Voice Extracted</> : `${instructions.length} characters`}
+                {analysis?.spokenIntent ? (
+                  <><Mic className="w-3 h-3 text-blue-400" /> Audio Detected</>
+                ) : analysis ? (
+                  <><MicOff className="w-3 h-3 text-white/20" /> No Audio Detected</>
+                ) : (
+                  `${instructions.length} characters`
+                )}
               </span>
               <button
                 onClick={() => analysis && triggerPromptGeneration(analysis, instructions)}
-                disabled={!instructions.trim() && !analysis?.spokenIntent || status === AppStatus.ANALYZING || status === AppStatus.GENERATING_PROMPT}
+                disabled={!analysis || status === AppStatus.ANALYZING || status === AppStatus.GENERATING_PROMPT}
                 className="px-8 py-3 bg-white text-black rounded-2xl font-bold hover:bg-blue-400 hover:text-white disabled:opacity-20 transition-all flex items-center gap-3"
               >
                 {status === AppStatus.GENERATING_PROMPT ? (
@@ -255,7 +252,6 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Control Pills */}
       <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex gap-4 z-50">
           <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase transition-all border ${isLeftOpen ? 'bg-blue-500 border-blue-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Audit View</button>
           <button onClick={() => setIsRightOpen(!isRightOpen)} className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase transition-all border ${isRightOpen ? 'bg-purple-500 border-purple-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Prompt View</button>

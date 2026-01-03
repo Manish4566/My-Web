@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { AnalysisResult } from '../types';
-import { Brain, Layout, ListChecks, ArrowRight, Mic } from 'lucide-react';
+import { Brain, Layout, ListChecks, ArrowRight, Mic, MicOff } from 'lucide-react';
 
 interface PanelLeftProps {
   isOpen: boolean;
@@ -10,6 +10,8 @@ interface PanelLeftProps {
 }
 
 const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
+  const hasVoice = analysis?.spokenIntent && analysis.spokenIntent.trim().length > 0;
+
   return (
     <div 
       className={`fixed top-0 left-0 h-full w-[380px] bg-[#0c0c0c] border-r border-white/5 z-40 transition-transform duration-500 ease-out transform ${
@@ -31,15 +33,14 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
         </div>
       ) : analysis ? (
         <div className="space-y-8">
-          {/* NEW: Spoken Intent Section */}
           <section className="animate-in fade-in slide-in-from-top-2 duration-700">
-            <div className="flex items-center gap-2 mb-3 text-blue-400 text-xs font-bold uppercase tracking-widest">
-              <Mic className="w-4 h-4" />
-              Spoken Instruction
+            <div className={`flex items-center gap-2 mb-3 text-xs font-bold uppercase tracking-widest ${hasVoice ? 'text-blue-400' : 'text-white/20'}`}>
+              {hasVoice ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+              {hasVoice ? 'Spoken Instruction' : 'No Voice Detected'}
             </div>
-            <div className={`p-4 rounded-2xl border ${analysis.spokenIntent ? 'bg-blue-500/10 border-blue-500/30 text-white' : 'bg-white/5 border-white/10 text-white/30'}`}>
-              <p className="text-sm italic leading-relaxed">
-                {analysis.spokenIntent ? `"${analysis.spokenIntent}"` : "No spoken instructions detected in audio."}
+            <div className={`p-4 rounded-2xl border transition-colors ${hasVoice ? 'bg-blue-500/10 border-blue-500/30 text-white shadow-lg shadow-blue-500/5' : 'bg-white/5 border-white/10 text-white/20'}`}>
+              <p className={`text-sm leading-relaxed ${hasVoice ? 'italic' : ''}`}>
+                {hasVoice ? `"${analysis.spokenIntent}"` : "The video appears to be silent. Please provide instructions manually in the main text box."}
               </p>
             </div>
           </section>
@@ -96,7 +97,7 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
       ) : (
         <div className="h-[60vh] flex flex-col items-center justify-center text-center opacity-40">
            <Brain className="w-12 h-12 mb-4" />
-           <p className="text-sm">Upload a video with audio to start</p>
+           <p className="text-sm">Upload a video to start analysis</p>
         </div>
       )}
     </div>

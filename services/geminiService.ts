@@ -22,14 +22,15 @@ export const analyzeVideo = async (videoBase64: string): Promise<AnalysisResult>
             },
             {
               text: `EXPERT UI AUDIT & AUDIO ANALYSIS:
-              1. WATCH the video and LISTEN to the audio carefully.
-              2. TRANSCRIBE the user's spoken words to identify the specific problems or edit requests they are describing.
-              3. IDENTIFY visible UI components and their architecture.
-              4. RETURN a JSON response with the following:
+              1. WATCH the video and LISTEN to the audio track carefully.
+              2. IF SPEECH IS DETECTED: Transcribe the user's spoken words to identify the specific problems or edit requests.
+              3. IF NO SPEECH IS DETECTED or the video is silent: Leave the "spokenIntent" field as an empty string (""). DO NOT make up or assume instructions if audio is missing.
+              4. IDENTIFY visible UI components, layouts, and their architecture.
+              5. RETURN a JSON response with the following:
                  - "pages": List of detected screens.
-                 - "elements": Details of UI components.
-                 - "reasoning": Your logical steps.
-                 - "spokenIntent": A summary of the EXACT instruction or problem the user MENTIONED in the audio.`
+                 - "elements": Details of UI components (buttons, inputs, cards).
+                 - "reasoning": Your logical steps for this audit.
+                 - "spokenIntent": The EXACT instruction from the audio, or an empty string if silent.`
             }
           ]
         }
@@ -69,7 +70,6 @@ export const analyzeVideo = async (videoBase64: string): Promise<AnalysisResult>
   } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
     if (error.message?.includes("Requested entity was not found")) {
-      // This is a hint to the UI to re-trigger key selection
       throw new Error("API_KEY_INVALID");
     }
     throw new Error("Failed to analyze video. Please check your API key and connection.");
@@ -89,11 +89,13 @@ export const generateFinalPrompt = async (
         {
           parts: [
             {
-              text: `Act as a senior front-end architect. Create a technical EDIT-ONLY prompt for a developer tool.
-                   Architecture: ${JSON.stringify(analysis.elements)}
-                   Context: ${JSON.stringify(analysis.pages)}
-                   Goal: Voice Feedback: ${analysis.spokenIntent}. Additional Text: ${userInstructions}
+              text: `Act as a senior front-end architect. Create a technical EDIT-ONLY prompt for a developer tool based on visual analysis and instructions.
+                   Architecture Context: ${JSON.stringify(analysis.elements)}
+                   Screens Detected: ${JSON.stringify(analysis.pages)}
+                   Input Source 1 (Transcribed Voice): ${analysis.spokenIntent || "No voice audio detected"}
+                   Input Source 2 (User Text Box): ${userInstructions || "No additional text provided"}
                    
+                   TASK: Combine the visual architecture audit with the user's goals to create a highly specific, code-centric prompt.
                    Return a single "content" field with the full prompt text.`
             }
           ]
