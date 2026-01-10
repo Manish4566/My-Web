@@ -1,22 +1,31 @@
 
-import React from 'react';
-import { AnalysisResult } from '../types';
-import { Brain, Layout, ListChecks, ArrowRight, Mic, MicOff } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { AnalysisResult, LiveTranscription } from '../types';
+import { Brain, Layout, ListChecks, ArrowRight, Mic, MicOff, Terminal } from 'lucide-react';
 
 interface PanelLeftProps {
   isOpen: boolean;
   analysis: AnalysisResult | null;
   loading: boolean;
+  liveTranscriptions?: LiveTranscription[];
+  liveStatus?: string;
 }
 
-const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
+const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading, liveTranscriptions, liveStatus }) => {
   const hasVoice = analysis?.spokenIntent && analysis.spokenIntent.trim().length > 0;
+  const transcriptionsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (liveTranscriptions && transcriptionsEndRef.current) {
+      transcriptionsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [liveTranscriptions]);
 
   return (
     <div 
       className={`fixed top-0 left-0 h-full w-[380px] bg-[#0c0c0c] border-r border-white/5 z-40 transition-transform duration-500 ease-out transform ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
-      } shadow-2xl overflow-y-auto pt-8 px-6 pb-12`}
+      } shadow-2xl overflow-y-auto pt-8 px-6 pb-12 custom-scrollbar`}
     >
       <div className="flex items-center gap-3 mb-8">
         <div className="p-2 bg-blue-500/10 rounded-lg">
@@ -31,6 +40,38 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
           <div className="h-24 bg-white/5 rounded"></div>
           <div className="h-24 bg-white/5 rounded"></div>
         </div>
+      ) : liveTranscriptions ? (
+        /* Live Session View */
+        <div className="space-y-6 animate-in fade-in duration-500">
+           <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Live Transcript</span>
+              <span className="text-[9px] text-white/30 uppercase font-bold italic tracking-tighter">{liveStatus}</span>
+           </div>
+           
+           <div className="space-y-4 flex flex-col">
+             {liveTranscriptions.map((t) => (
+               <div key={t.id} className={`flex flex-col w-full ${t.role === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 duration-300 mb-2`}>
+                 <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed border max-w-[85%] ${
+                   t.role === 'user' 
+                   ? 'bg-blue-500/10 border-blue-500/20 text-blue-50 rounded-tr-none' 
+                   : 'bg-white/5 border-white/10 text-white/80 rounded-tl-none'
+                 }`}>
+                   {t.text}
+                 </div>
+                 <span className="text-[8px] text-white/20 uppercase font-black tracking-widest mt-1">
+                   {t.role === 'user' ? 'User' : 'Architect'}
+                 </span>
+               </div>
+             ))}
+             {liveTranscriptions.length === 0 && (
+               <div className="py-20 text-center opacity-20">
+                 <Mic className="w-12 h-12 mx-auto mb-4 animate-pulse" />
+                 <p className="text-xs uppercase tracking-widest font-black">Listening for voice input...</p>
+               </div>
+             )}
+             <div ref={transcriptionsEndRef} className="h-4" />
+           </div>
+        </div>
       ) : analysis ? (
         <div className="space-y-8">
           <section className="animate-in fade-in slide-in-from-top-2 duration-700">
@@ -40,7 +81,7 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
             </div>
             <div className={`p-4 rounded-2xl border transition-colors ${hasVoice ? 'bg-blue-500/10 border-blue-500/30 text-white shadow-lg shadow-blue-500/5' : 'bg-white/5 border-white/10 text-white/20'}`}>
               <p className={`text-sm leading-relaxed ${hasVoice ? 'italic' : ''}`}>
-                {hasVoice ? `"${analysis.spokenIntent}"` : "The video appears to be silent. Please provide instructions manually in the main text box."}
+                {hasVoice ? `"${analysis.spokenIntent}"` : "The source appears to be silent. Use the text box for instructions."}
               </p>
             </div>
           </section>
@@ -97,7 +138,7 @@ const PanelLeft: React.FC<PanelLeftProps> = ({ isOpen, analysis, loading }) => {
       ) : (
         <div className="h-[60vh] flex flex-col items-center justify-center text-center opacity-40">
            <Brain className="w-12 h-12 mb-4" />
-           <p className="text-sm">Upload a video to start analysis</p>
+           <p className="text-sm">Context Pending...</p>
         </div>
       )}
     </div>

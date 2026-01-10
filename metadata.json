@@ -3,6 +3,7 @@
   "description": "A premium AI developer tool that analyzes website screen recordings to generate precise, non-destructive edit prompts.",
   "requestFramePermissions": [
     "camera",
-    "microphone"
+    "microphone",
+    "display-capture"
   ]
 }

@@ -1,16 +1,18 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppStatus, AnalysisResult, FinalPrompt, ModalType, HistoryItem, UserProfile } from './types';
+import { AppStatus, AnalysisResult, FinalPrompt, ModalType, HistoryItem, UserProfile, UploadMode, LiveTranscription } from './types';
 import PanelLeft from './components/PanelLeft';
 import PanelRight from './components/PanelRight';
+import NotificationSidebar from './components/NotificationSidebar';
 import UploadCircle from './components/UploadCircle';
 import Modal from './components/Modals';
-import { analyzeVideo, generateFinalPrompt } from './services/geminiService';
+import { analyzeMedia, generateFinalPrompt } from './services/geminiService';
 import { saveToHistory, getHistory } from './services/historyService';
 import { auth, rtdb } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, onValue } from 'firebase/database';
-import { Zap, LogOut, Cloud, Key, Info, Mic, CheckCircle2, MicOff } from 'lucide-react';
+import { Zap, LogOut, Cloud, Key, Info, Mic, CheckCircle2, MicOff, Menu, X, Rocket } from 'lucide-react';
+import { LiveArchitectSession } from './services/liveService';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
@@ -19,9 +21,17 @@ const App: React.FC = () => {
   const [instructions, setInstructions] = useState('');
   const [isLeftOpen, setIsLeftOpen] = useState(false);
   const [isRightOpen, setIsRightOpen] = useState(false);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
-  const [lastVideoBase64, setLastVideoBase64] = useState<string | null>(null);
+  const [lastMediaBase64, setLastMediaBase64] = useState<string | null>(null);
+  const [uploadMode, setUploadMode] = useState<UploadMode>('video');
+  
+  // Live states
+  const [liveStream, setLiveStream] = useState<MediaStream | null>(null);
+  const [liveTranscriptions, setLiveTranscriptions] = useState<LiveTranscription[]>([]);
+  const [liveStatus, setLiveStatus] = useState<string>('');
+  const liveSessionRef = useRef<LiveArchitectSession | null>(null);
   
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [checkingKey, setCheckingKey] = useState(true);
@@ -34,7 +44,6 @@ const App: React.FC = () => {
     const checkKey = async () => {
       const envKey = process.env.API_KEY;
       const isKeyPresent = envKey && envKey !== "undefined" && envKey !== "";
-
       if (window.aistudio) {
         const hasSelected = await window.aistudio.hasSelectedApiKey();
         setHasApiKey(hasSelected || !!isKeyPresent);
@@ -68,11 +77,99 @@ const App: React.FC = () => {
   const handleSelectKey = async () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
-      // Proceed immediately to minimize race conditions
       setHasApiKey(true);
     } else {
       alert("Please open this app in Google AI Studio or set the API_KEY environment variable.");
     }
+  };
+
+  const startLiveSession = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        alert("Live screen audit is not supported by your browser.");
+        return;
+      }
+
+      setStatus(AppStatus.LIVE);
+      setUploadMode('live');
+      setIsLeftOpen(true);
+      
+      let displayStream: MediaStream;
+      try {
+        displayStream = await navigator.mediaDevices.getDisplayMedia({ 
+          video: { displaySurface: "monitor" },
+          audio: false 
+        });
+      } catch (err: any) {
+        if (err.name === 'NotAllowedError' || err.message?.toLowerCase().includes('denied')) {
+          throw new Error("Screen sharing was cancelled.");
+        }
+        throw err;
+      }
+
+      setLiveStream(displayStream);
+      setLiveTranscriptions([]);
+      setLiveStatus('Connecting to AI Architect...');
+
+      liveSessionRef.current = new LiveArchitectSession(
+        (t) => setLiveTranscriptions(prev => {
+          const index = prev.findIndex(item => item.id === t.id);
+          if (index !== -1) {
+            const newArr = [...prev];
+            newArr[index] = t;
+            return newArr;
+          }
+          return [...prev, t];
+        }),
+        (s) => setLiveStatus(s)
+      );
+
+      await liveSessionRef.current.start(displayStream);
+      
+      displayStream.getVideoTracks()[0].onended = stopLiveSession;
+    } catch (err: any) {
+      console.error("Live session failed:", err);
+      alert(err.message || "Could not start live audit session.");
+      stopLiveSession();
+    }
+  };
+
+  const stopLiveSession = async () => {
+    // Save live session to history before stopping
+    if (liveTranscriptions.length > 0) {
+      const fullConversation = liveTranscriptions
+        .map(t => `${t.role === 'user' ? 'USER' : 'ARCHITECT'}: ${t.text}`)
+        .join('\n\n');
+
+      const liveSummaryAnalysis: AnalysisResult = {
+        pages: ["Live Environment"],
+        elements: [{ type: "Live Transcript", description: "Archived Conversation", canEdit: false }],
+        reasoning: ["Live Architectural Audit archived on session end"],
+        spokenIntent: `Live session summary: ${liveTranscriptions.length} messages exchanged.`
+      };
+
+      try {
+        const newItem = await saveToHistory({
+          instructions: "Live Architect Audit Session",
+          analysis: liveSummaryAnalysis,
+          prompt: { content: fullConversation }
+        });
+        setHistoryItems(prev => [newItem, ...prev]);
+      } catch (e) {
+        console.error("Failed to save live session to history", e);
+      }
+    }
+
+    if (liveSessionRef.current) {
+      liveSessionRef.current.stop();
+      liveSessionRef.current = null;
+    }
+    if (liveStream) {
+      liveStream.getTracks().forEach(track => track.stop());
+      setLiveStream(null);
+    }
+    setStatus(AppStatus.IDLE);
+    setUploadMode('video');
   };
 
   const triggerPromptGeneration = async (currentAnalysis: AnalysisResult, manualInstructions: string) => {
@@ -84,14 +181,14 @@ const App: React.FC = () => {
       setStatus(AppStatus.COMPLETED);
 
       const newItem = await saveToHistory({
-        instructions: manualInstructions || currentAnalysis.spokenIntent || "Visual Audit",
+        instructions: manualInstructions || currentAnalysis.spokenIntent || "Multimodal Audit",
         analysis: currentAnalysis,
         prompt: finalResult
-      }, lastVideoBase64 || undefined);
+      }, lastMediaBase64 || undefined);
       setHistoryItems(prev => [newItem, ...prev]);
     } catch (error: any) {
       if (error.message === "API_KEY_INVALID" || error.message?.includes("Requested entity was not found")) {
-        setHasApiKey(false); // Reset and show Gate
+        setHasApiKey(false);
         setStatus(AppStatus.IDLE);
       } else {
         alert(error.message);
@@ -100,7 +197,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleVideoUpload = async (file: File) => {
+  const handleMediaUpload = async (file: File) => {
     try {
       setStatus(AppStatus.ANALYZING);
       setIsLeftOpen(true);
@@ -112,9 +209,12 @@ const App: React.FC = () => {
       reader.readAsDataURL(file);
       reader.onload = async () => {
         try {
-          const base64 = (reader.result as string).split(',')[1];
-          setLastVideoBase64(base64);
-          const result = await analyzeVideo(base64);
+          const parts = (reader.result as string).split(',');
+          const base64 = parts[1];
+          const mimeType = parts[0].split(':')[1].split(';')[0];
+          
+          setLastMediaBase64(base64);
+          const result = await analyzeMedia(base64, mimeType);
           setAnalysis(result);
           analysisRef.current = result;
 
@@ -125,7 +225,7 @@ const App: React.FC = () => {
           setStatus(AppStatus.READY_FOR_PROMPT);
         } catch (error: any) {
           if (error.message === "API_KEY_INVALID" || error.message?.includes("Requested entity was not found")) {
-            setHasApiKey(false); // Reset and show Gate
+            setHasApiKey(false);
             setStatus(AppStatus.IDLE);
           } else {
             alert(error.message);
@@ -135,7 +235,7 @@ const App: React.FC = () => {
       };
     } catch (error) {
       setStatus(AppStatus.IDLE);
-      alert("Error processing video upload.");
+      alert("Error processing upload.");
     }
   };
 
@@ -154,17 +254,11 @@ const App: React.FC = () => {
           </div>
           <div className="space-y-3">
             <h1 className="text-3xl font-bold tracking-tight">API Key Required</h1>
-            <p className="text-white/40 text-sm">Connect a paid Google Cloud Project API Key to enable multimodal video analysis.</p>
+            <p className="text-white/40 text-sm">Connect a paid Google Cloud Project API Key.</p>
           </div>
           <button onClick={handleSelectKey} className="w-full py-4 bg-white text-black rounded-2xl font-black text-lg hover:bg-blue-400 hover:text-white transition-all transform active:scale-95 shadow-xl">
             Connect API Key
           </button>
-          <div className="bg-white/5 p-4 rounded-xl border border-white/5">
-            <p className="text-[10px] text-white/30 uppercase tracking-widest font-bold">Important</p>
-            <p className="text-[11px] text-white/40 mt-1 leading-relaxed">
-              Ensure you have billing enabled on your Google Cloud project. If your previous selection failed, try a different project key.
-            </p>
-          </div>
         </div>
       </div>
     );
@@ -191,18 +285,18 @@ const App: React.FC = () => {
         <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
         
         <button 
-          onClick={() => !userProfile?.isPro && setActiveModal('upgrade')} 
-          className={`px-6 py-2 text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${
-            userProfile?.isPro 
-            ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-default' 
-            : 'bg-white/10 hover:bg-white text-white hover:text-black'
-          }`}
+          onClick={() => setActiveModal('upgrade')}
+          className="px-6 py-2 text-sm font-bold rounded-xl transition-all flex items-center gap-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500 hover:text-white shadow-lg"
         >
-          {userProfile?.isPro ? (
-            <><CheckCircle2 className="w-4 h-4" /> Successful!</>
-          ) : (
-            <><Zap className="w-4 h-4" /> Upgrade</>
-          )}
+          <Rocket className="w-4 h-4" /> Upgrade Pro
+        </button>
+
+        <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
+        <button 
+          onClick={() => setIsNotificationOpen(true)}
+          className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-white/60 hover:text-white"
+        >
+          <Menu className="w-5 h-5" />
         </button>
       </div>
 
@@ -221,45 +315,79 @@ const App: React.FC = () => {
         }} 
       />
 
-      <PanelLeft isOpen={isLeftOpen} analysis={analysis} loading={status === AppStatus.ANALYZING} />
+      <PanelLeft 
+        isOpen={isLeftOpen} 
+        analysis={analysis} 
+        loading={status === AppStatus.ANALYZING} 
+        liveTranscriptions={status === AppStatus.LIVE ? liveTranscriptions : undefined}
+        liveStatus={status === AppStatus.LIVE ? liveStatus : undefined}
+      />
       <PanelRight isOpen={isRightOpen} prompt={prompt} loading={status === AppStatus.GENERATING_PROMPT} />
+      <NotificationSidebar 
+        isOpen={isNotificationOpen} 
+        onClose={() => setIsNotificationOpen(false)} 
+        onSelectMode={(mode) => {
+          setUploadMode(mode);
+          setAnalysis(null);
+          setPrompt(null);
+          setStatus(AppStatus.IDLE);
+        }}
+        onStartLiveSession={startLiveSession}
+        history={historyItems}
+      />
 
       <main className={`flex-grow flex flex-col items-center justify-center transition-all duration-500 ${isLeftOpen && isRightOpen ? 'px-[450px]' : isLeftOpen ? 'pl-[380px]' : isRightOpen ? 'pr-[420px]' : ''}`}>
         <div className="max-w-2xl w-full flex flex-col items-center gap-10 px-6 mt-12">
+          {status === AppStatus.LIVE && (
+            <div className="flex items-center gap-3 px-6 py-2 bg-red-500/10 border border-red-500/20 rounded-full animate-in slide-in-from-top-4">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-red-500">Live Audit Session Active</span>
+              <button onClick={stopLiveSession} className="ml-4 text-white/40 hover:text-white"><X className="w-4 h-4" /></button>
+            </div>
+          )}
+          
           <header className="text-center">
             <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-b from-white to-white/40 bg-clip-text text-transparent">PromptForge AI</h1>
-            <p className="text-white/40 text-[10px] uppercase tracking-[0.4em] mt-3">Multimodal Edit Architect</p>
+            <p className="text-white/40 text-[10px] uppercase tracking-[0.4em] mt-3">Architect & Multimodal Auditor</p>
           </header>
 
-          <UploadCircle onFileSelect={handleVideoUpload} isAnalyzing={status === AppStatus.ANALYZING} videoLoaded={!!analysis} />
+          <UploadCircle 
+            onFileSelect={handleMediaUpload} 
+            isAnalyzing={status === AppStatus.ANALYZING} 
+            hasLoaded={!!analysis} 
+            mode={uploadMode}
+            liveStream={liveStream}
+          />
 
           <div className="w-full bg-[#0c0c0c] border border-white/10 rounded-[32px] p-2 flex flex-col shadow-2xl group transition-all hover:border-blue-500/20">
             <textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              placeholder={analysis ? "Type your edit instructions here..." : "Upload a recording first to enable prompt generation..."}
+              placeholder={status === AppStatus.LIVE ? "I'm listening to your voice instructions..." : (analysis ? "Type your edit instructions here..." : "Provide context via Upload or Live Session...")}
               className="w-full h-32 bg-transparent p-6 text-sm resize-none focus:outline-none placeholder:text-white/20"
-              disabled={status === AppStatus.ANALYZING || !analysis}
+              disabled={status === AppStatus.ANALYZING || (status !== AppStatus.LIVE && !analysis)}
             />
             <div className="flex items-center justify-between p-2 pl-6">
               <span className="text-[10px] uppercase tracking-widest text-white/20 font-bold flex items-center gap-2">
-                {analysis?.spokenIntent ? (
-                  <><Mic className="w-3 h-3 text-blue-400" /> Audio Detected</>
+                {status === AppStatus.LIVE ? (
+                  <><Mic className="w-3 h-3 text-blue-400" /> Voice Context Captured</>
+                ) : analysis?.spokenIntent ? (
+                  <><Mic className="w-3 h-3 text-blue-400" /> Voice Analyzed</>
                 ) : analysis ? (
-                  <><MicOff className="w-3 h-3 text-white/20" /> No Audio Detected</>
+                  <><CheckCircle2 className="w-3 h-3 text-blue-400" /> Audit Ready</>
                 ) : (
                   `${instructions.length} characters`
                 )}
               </span>
               <button
-                onClick={() => analysis && triggerPromptGeneration(analysis, instructions)}
-                disabled={!analysis || status === AppStatus.ANALYZING || status === AppStatus.GENERATING_PROMPT}
+                onClick={() => (analysis || status === AppStatus.LIVE) && triggerPromptGeneration(analysisRef.current || { pages: [], elements: [], reasoning: [], spokenIntent: instructions }, instructions)}
+                disabled={(status !== AppStatus.LIVE && !analysis) || status === AppStatus.ANALYZING || status === AppStatus.GENERATING_PROMPT}
                 className="px-8 py-3 bg-white text-black rounded-2xl font-bold hover:bg-blue-400 hover:text-white disabled:opacity-20 transition-all flex items-center gap-3"
               >
                 {status === AppStatus.GENERATING_PROMPT ? (
                    <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" /> Forging...</span>
                 ) : (
-                  <><Zap className="w-4 h-4" /> Generate Prompt</>
+                  <><Zap className="w-4 h-4" /> {status === AppStatus.LIVE ? 'Forge Capture' : 'Generate Prompt'}</>
                 )}
               </button>
             </div>

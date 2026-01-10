@@ -40,7 +40,17 @@ export enum AppStatus {
   ANALYZING = 'ANALYZING',
   READY_FOR_PROMPT = 'READY_FOR_PROMPT',
   GENERATING_PROMPT = 'GENERATING_PROMPT',
-  COMPLETED = 'COMPLETED'
+  COMPLETED = 'COMPLETED',
+  LIVE = 'LIVE'
+}
+
+export interface LiveTranscription {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  timestamp: number;
 }
 
 export type ModalType = 'history' | 'signup' | 'upgrade' | 'payment' | null;
+
+export type UploadMode = 'video' | 'image' | 'pdf' | 'screen' | 'live';

@@ -2,7 +2,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, FinalPrompt } from "../types";
 
-// Create a helper to get a fresh AI instance with the latest key
 const getAI = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey || apiKey === "undefined" || apiKey === "") {
@@ -11,31 +10,36 @@ const getAI = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-export const analyzeVideo = async (videoBase64: string): Promise<AnalysisResult> => {
+export const analyzeMedia = async (
+  base64Data: string, 
+  mimeType: string
+): Promise<AnalysisResult> => {
   try {
     const ai = getAI();
+    // Use gemini-3-pro-preview for high-quality multimodal analysis as requested
+    const model = 'gemini-3-pro-preview';
+    
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: model,
       contents: [
         {
           parts: [
             {
               inlineData: {
-                mimeType: 'video/mp4',
-                data: videoBase64
+                mimeType: mimeType,
+                data: base64Data
               }
             },
             {
-              text: `EXPERT UI AUDIT & AUDIO ANALYSIS:
-              1. WATCH the video and LISTEN to the audio track carefully.
-              2. IF SPEECH IS DETECTED: Transcribe the user's spoken words to identify the specific problems or edit requests.
-              3. IF NO SPEECH IS DETECTED or the video is silent: Leave the "spokenIntent" field as an empty string (""). DO NOT make up or assume instructions if audio is missing.
-              4. IDENTIFY visible UI components, layouts, and their architecture.
-              5. RETURN a JSON response with the following:
+              text: `EXPERT UI ARCHITECT AUDIT:
+              1. ANALYZE the provided ${mimeType.split('/')[0]} (UI screenshot, screen recording, or document).
+              2. IDENTIFY visible screens/pages, UI components, and layout architecture.
+              3. IF AUDIO/TEXT IS PRESENT: Identify intent.
+              4. RETURN a JSON response:
                  - "pages": List of detected screens.
-                 - "elements": Details of UI components (buttons, inputs, cards).
-                 - "reasoning": Your logical steps for this audit.
-                 - "spokenIntent": The EXACT instruction from the audio, or an empty string if silent.`
+                 - "elements": Details of UI components (type, description, canEdit: boolean).
+                 - "reasoning": Logical steps for this audit.
+                 - "spokenIntent": Summary of requested changes or identified problems.`
             }
           ]
         }
@@ -73,11 +77,11 @@ export const analyzeVideo = async (videoBase64: string): Promise<AnalysisResult>
       spokenIntent: data.spokenIntent || ""
     };
   } catch (error: any) {
-    console.error("Gemini Analysis Error:", error);
+    console.error("Gemini Media Analysis Error:", error);
     if (error.message === "API_KEY_MISSING" || error.message?.includes("Requested entity was not found")) {
       throw new Error("API_KEY_INVALID");
     }
-    throw new Error("Failed to analyze video. Please check your API key and connection.");
+    throw new Error("Failed to analyze media. Please check your API key.");
   }
 };
 
@@ -88,7 +92,7 @@ export const generateFinalPrompt = async (
   try {
     const ai = getAI();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: [
         {
           parts: [
@@ -96,10 +100,10 @@ export const generateFinalPrompt = async (
               text: `Act as a senior front-end architect. Create a technical EDIT-ONLY prompt for a developer tool based on visual analysis and instructions.
                    Architecture Context: ${JSON.stringify(analysis.elements)}
                    Screens Detected: ${JSON.stringify(analysis.pages)}
-                   Input Source 1 (Transcribed Voice): ${analysis.spokenIntent || "No voice audio detected"}
+                   Input Source 1 (Automated Intent): ${analysis.spokenIntent || "No specific voice/text intent found"}
                    Input Source 2 (User Text Box): ${userInstructions || "No additional text provided"}
                    
-                   TASK: Combine the visual architecture audit with the user's goals to create a highly specific, code-centric prompt.
+                   TASK: Combine the visual architecture audit with the user's goals to create a highly specific, code-centric prompt for modifying a web application.
                    Return a single "content" field with the full prompt text.`
             }
           ]
