@@ -1,6 +1,7 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, FinalPrompt } from "../types";
+import { AnalysisResult, FinalPrompt, ChatMessage } from "../types";
 
 const getAI = () => {
   const apiKey = process.env.API_KEY;
@@ -74,7 +75,8 @@ export const analyzeMedia = async (
       pages: data.pages || [],
       elements: data.elements || [],
       reasoning: data.reasoning || [],
-      spokenIntent: data.spokenIntent || ""
+      spokenIntent: data.spokenIntent || "",
+      chatHistory: []
     };
   } catch (error: any) {
     console.error("Gemini Media Analysis Error:", error);
@@ -127,5 +129,48 @@ export const generateFinalPrompt = async (
     console.error("Gemini Prompt Gen Error:", error);
     if (error.message === "API_KEY_MISSING") throw new Error("API_KEY_INVALID");
     throw new Error("Error generating final prompt.");
+  }
+};
+
+// Handle multimodal interactive chat about the provided media to support AppStatus.CHAT_WAITING
+export const chatWithMedia = async (
+  base64Data: string,
+  mimeType: string,
+  userMessage: string,
+  history: ChatMessage[]
+): Promise<string> => {
+  try {
+    const ai = getAI();
+    
+    // Convert history into contents format required by Gemini API
+    const contents = history.map((msg, index) => {
+      const role = msg.role === 'user' ? 'user' : 'model';
+      const parts: any[] = [{ text: msg.text }];
+      
+      // Inject the media context into the first user message of the session
+      if (index === 0 && role === 'user') {
+        parts.push({
+          inlineData: {
+            mimeType: mimeType,
+            data: base64Data
+          }
+        });
+      }
+      
+      return { role, parts };
+    });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: contents,
+      config: {
+        systemInstruction: "You are a Senior UI Architect and Frontend Expert. You are discussing a UI media file (image, video, or PDF) with the user. Provide technical, actionable advice and answer questions about the visual architecture. Keep responses professional and concise.",
+      }
+    });
+
+    return response.text || "I'm sorry, I couldn't process that response.";
+  } catch (error: any) {
+    console.error("Gemini Multimodal Chat Error:", error);
+    throw new Error("Failed to communicate with the architect. Please verify your connection.");
   }
 };

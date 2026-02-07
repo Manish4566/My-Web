@@ -1,4 +1,10 @@
 
+
+export interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+}
+
 export interface AnalysisResult {
   pages: string[];
   elements: {
@@ -8,6 +14,7 @@ export interface AnalysisResult {
   }[];
   reasoning: string[];
   spokenIntent?: string;
+  chatHistory?: ChatMessage[];
 }
 
 export interface FinalPrompt {
@@ -41,7 +48,8 @@ export enum AppStatus {
   READY_FOR_PROMPT = 'READY_FOR_PROMPT',
   GENERATING_PROMPT = 'GENERATING_PROMPT',
   COMPLETED = 'COMPLETED',
-  LIVE = 'LIVE'
+  LIVE = 'LIVE',
+  CHAT_WAITING = 'CHAT_WAITING'
 }
 
 export interface LiveTranscription {
