@@ -10,38 +10,56 @@ export const saveToHistory = async (
   videoBase64?: string
 ): Promise<HistoryItem> => {
   const user = auth.currentUser;
+  const timestamp = Date.now();
+  const userName = user?.displayName || user?.email?.split('@')[0] || 'Anonymous';
   
+  // Create the item structure
   const newItem: HistoryItem = {
     ...item,
-    id: Math.random().toString(36).substr(2, 9),
-    timestamp: Date.now(),
-    userName: user?.displayName || user?.email?.split('@')[0] || 'Anonymous',
-    // Storing a simple URL reference for the database
-    videoUrl: videoBase64 ? "https://storage.placeholder.com/video_ref" : "no_video_reference"
+    id: '', // Will be set below
+    timestamp,
+    userName,
+    videoUrl: videoBase64 ? "base64_ref" : "no_video"
   };
 
-  // Local storage fallback
+  // 1. Local storage fallback (Prepend for immediate UI update)
   const localHistory = getLocalHistory();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([newItem, ...localHistory].slice(0, 20)));
+  const tempId = Math.random().toString(36).substr(2, 9);
+  newItem.id = tempId;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([newItem, ...localHistory].slice(0, 30)));
 
-  // Realtime Database Sync
+  // 2. Realtime Database Sync
   if (user) {
     try {
       const historyRef = ref(rtdb, `users/${user.uid}/history`);
       const newHistoryRef = push(historyRef);
-      await set(newHistoryRef, newItem);
+      const finalId = newHistoryRef.key || tempId;
       
-      // Also update user profile in RTDB to ensure it appears in the Data tab
+      const dbItem = { ...newItem, id: finalId };
+      await set(newHistoryRef, dbItem);
+      
+      // Update local storage with the real ID if it changed
+      const updatedLocal = getLocalHistory();
+      if (updatedLocal.length > 0 && updatedLocal[0].id === tempId) {
+        updatedLocal[0].id = finalId;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLocal));
+      }
+
+      // Ensure profile exists/is updated
       const profileRef = ref(rtdb, `users/${user.uid}/profile`);
+      const profileSnap = await get(profileRef);
+      const existingProfile = profileSnap.exists() ? profileSnap.val() : {};
+      
       await set(profileRef, {
-        name: user.displayName || 'Anonymous',
+        ...existingProfile,
+        name: userName,
         email: user.email,
-        lastLogin: Date.now()
+        lastLogin: timestamp
       });
 
-      console.log("Synced to Realtime Database for user:", user.displayName);
+      newItem.id = finalId;
     } catch (e) {
-      console.error("RTDB sync failed:", e);
+      console.error("Database sync failed, relying on local history:", e);
     }
   }
 
@@ -50,7 +68,12 @@ export const saveToHistory = async (
 
 const getLocalHistory = (): HistoryItem[] => {
   const data = localStorage.getItem(STORAGE_KEY);
-  return data ? JSON.parse(data) : [];
+  if (!data) return [];
+  try {
+    return JSON.parse(data);
+  } catch (e) {
+    return [];
+  }
 };
 
 export const getHistory = async (): Promise<HistoryItem[]> => {
@@ -59,18 +82,18 @@ export const getHistory = async (): Promise<HistoryItem[]> => {
   if (user) {
     try {
       const historyRef = ref(rtdb, `users/${user.uid}/history`);
-      const historyQuery = query(historyRef, orderByChild("timestamp"), limitToLast(20));
+      // Get last 30 items
+      const historyQuery = query(historyRef, orderByChild("timestamp"), limitToLast(30));
       const snapshot = await get(historyQuery);
       
       if (snapshot.exists()) {
         const data = snapshot.val();
-        // Convert object to sorted array
-        return Object.values(data).sort((a: any, b: any) => b.timestamp - a.timestamp) as HistoryItem[];
+        // Convert object to sorted array (Newest first)
+        const items = Object.values(data) as HistoryItem[];
+        return items.sort((a, b) => b.timestamp - a.timestamp);
       }
-      return getLocalHistory();
     } catch (e) {
-      console.error("Failed to fetch RTDB history:", e);
-      return getLocalHistory();
+      console.error("Failed to fetch cloud history:", e);
     }
   }
   

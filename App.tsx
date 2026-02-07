@@ -11,7 +11,8 @@ import { saveToHistory, getHistory } from './services/historyService';
 import { auth, rtdb } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, onValue } from 'firebase/database';
-import { Zap, LogOut, Cloud, Key, Info, Mic, CheckCircle2, MicOff, Menu, X, Rocket } from 'lucide-react';
+// Added Activity to the imports below to fix 'Cannot find name Activity'
+import { Zap, LogOut, Cloud, Key, Info, Mic, CheckCircle2, MicOff, Menu, X, Rocket, Activity } from 'lucide-react';
 import { LiveArchitectSession } from './services/liveService';
 
 const App: React.FC = () => {
@@ -40,6 +41,11 @@ const App: React.FC = () => {
 
   const analysisRef = useRef<AnalysisResult | null>(null);
 
+  const refreshHistory = async () => {
+    const history = await getHistory();
+    setHistoryItems(history);
+  };
+
   useEffect(() => {
     const checkKey = async () => {
       const envKey = process.env.API_KEY;
@@ -63,8 +69,7 @@ const App: React.FC = () => {
             setUserProfile(snapshot.val() as UserProfile);
           }
         });
-        const history = await getHistory();
-        setHistoryItems(history);
+        refreshHistory();
       } else {
         setUser(null);
         setUserProfile(null);
@@ -93,6 +98,8 @@ const App: React.FC = () => {
       setStatus(AppStatus.LIVE);
       setUploadMode('live');
       setIsLeftOpen(true);
+      setPrompt(null);
+      setAnalysis(null);
       
       let displayStream: MediaStream;
       try {
@@ -142,10 +149,10 @@ const App: React.FC = () => {
         .join('\n\n');
 
       const liveSummaryAnalysis: AnalysisResult = {
-        pages: ["Live Environment"],
-        elements: [{ type: "Live Transcript", description: "Archived Conversation", canEdit: false }],
-        reasoning: ["Live Architectural Audit archived on session end"],
-        spokenIntent: `Live session summary: ${liveTranscriptions.length} messages exchanged.`
+        pages: ["Live Screen Audit"],
+        elements: [{ type: "Session Log", description: "Real-time UI Analysis & Dialogue", canEdit: false }],
+        reasoning: ["Live Architectural Session completed"],
+        spokenIntent: `Live audit transcript with ${liveTranscriptions.length} dialogue turns captured.`
       };
 
       try {
@@ -170,6 +177,7 @@ const App: React.FC = () => {
     }
     setStatus(AppStatus.IDLE);
     setUploadMode('video');
+    refreshHistory();
   };
 
   const triggerPromptGeneration = async (currentAnalysis: AnalysisResult, manualInstructions: string) => {
@@ -186,6 +194,7 @@ const App: React.FC = () => {
         prompt: finalResult
       }, lastMediaBase64 || undefined);
       setHistoryItems(prev => [newItem, ...prev]);
+      refreshHistory();
     } catch (error: any) {
       if (error.message === "API_KEY_INVALID" || error.message?.includes("Requested entity was not found")) {
         setHasApiKey(false);
@@ -253,8 +262,8 @@ const App: React.FC = () => {
             <Key className="w-10 h-10 text-blue-400" />
           </div>
           <div className="space-y-3">
-            <h1 className="text-3xl font-bold tracking-tight">API Key Required</h1>
-            <p className="text-white/40 text-sm">Connect a paid Google Cloud Project API Key.</p>
+            <h1 className="text-3xl font-bold tracking-tight text-white">API Key Required</h1>
+            <p className="text-white/40 text-sm font-medium">Connect a paid Google Cloud Project API Key.</p>
           </div>
           <button onClick={handleSelectKey} className="w-full py-4 bg-white text-black rounded-2xl font-black text-lg hover:bg-blue-400 hover:text-white transition-all transform active:scale-95 shadow-xl">
             Connect API Key
@@ -268,7 +277,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-[#050505] text-white flex flex-col relative overflow-hidden">
       {/* Top Header Bar */}
       <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[80] flex items-center bg-white/5 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl shadow-2xl">
-        <button onClick={() => setActiveModal('history')} className="px-6 py-2 text-sm font-semibold hover:bg-white/10 rounded-xl transition-all">History</button>
+        <button onClick={() => { refreshHistory(); setActiveModal('history'); }} className="px-6 py-2 text-sm font-bold hover:bg-white/10 rounded-xl transition-all">History</button>
         <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
         {user ? (
           <div className="flex items-center">
@@ -280,7 +289,7 @@ const App: React.FC = () => {
             <button onClick={() => signOut(auth)} className="p-2 hover:bg-red-500/10 rounded-xl text-white/50 hover:text-red-400 transition-colors"><LogOut className="w-4 h-4" /></button>
           </div>
         ) : (
-          <button onClick={() => setActiveModal('signup')} className="px-6 py-2 text-sm font-semibold hover:bg-white/10 rounded-xl transition-all">Sign Up</button>
+          <button onClick={() => setActiveModal('signup')} className="px-6 py-2 text-sm font-bold hover:bg-white/10 rounded-xl transition-all">Sign Up</button>
         )}
         <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
         
@@ -341,14 +350,14 @@ const App: React.FC = () => {
           {status === AppStatus.LIVE && (
             <div className="flex items-center gap-3 px-6 py-2 bg-red-500/10 border border-red-500/20 rounded-full animate-in slide-in-from-top-4">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
-              <span className="text-[10px] font-black uppercase tracking-widest text-red-500">Live Audit Session Active</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-red-500">Live Architect Active</span>
               <button onClick={stopLiveSession} className="ml-4 text-white/40 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
           )}
           
           <header className="text-center">
             <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-b from-white to-white/40 bg-clip-text text-transparent">PromptForge AI</h1>
-            <p className="text-white/40 text-[10px] uppercase tracking-[0.4em] mt-3">Architect & Multimodal Auditor</p>
+            <p className="text-white/40 text-[10px] uppercase tracking-[0.4em] mt-3 font-medium">Architect & Multimodal Auditor</p>
           </header>
 
           <UploadCircle 
@@ -363,26 +372,26 @@ const App: React.FC = () => {
             <textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              placeholder={status === AppStatus.LIVE ? "I'm listening to your voice instructions..." : (analysis ? "Type your edit instructions here..." : "Provide context via Upload or Live Session...")}
-              className="w-full h-32 bg-transparent p-6 text-sm resize-none focus:outline-none placeholder:text-white/20"
-              disabled={status === AppStatus.ANALYZING || (status !== AppStatus.LIVE && !analysis)}
+              placeholder={status === AppStatus.LIVE ? "Architect session transcript will be saved on exit..." : (analysis ? "Type your architect edit instructions here..." : "Provide context via Media Upload or Live Session...")}
+              className="w-full h-32 bg-transparent p-6 text-sm resize-none focus:outline-none placeholder:text-white/20 font-medium"
+              disabled={status === AppStatus.ANALYZING || (status !== AppStatus.LIVE && !analysis) || status === AppStatus.LIVE}
             />
             <div className="flex items-center justify-between p-2 pl-6">
-              <span className="text-[10px] uppercase tracking-widest text-white/20 font-bold flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-widest text-white/20 font-black flex items-center gap-2">
                 {status === AppStatus.LIVE ? (
-                  <><Mic className="w-3 h-3 text-blue-400" /> Voice Context Captured</>
+                  <><Activity className="w-3 h-3 text-red-500" /> Session Active</>
                 ) : analysis?.spokenIntent ? (
-                  <><Mic className="w-3 h-3 text-blue-400" /> Voice Analyzed</>
+                  <><Mic className="w-3 h-3 text-blue-400" /> Voice Input Parsed</>
                 ) : analysis ? (
                   <><CheckCircle2 className="w-3 h-3 text-blue-400" /> Audit Ready</>
                 ) : (
-                  `${instructions.length} characters`
+                  `${instructions.length} chars`
                 )}
               </span>
               <button
                 onClick={() => (analysis || status === AppStatus.LIVE) && triggerPromptGeneration(analysisRef.current || { pages: [], elements: [], reasoning: [], spokenIntent: instructions }, instructions)}
-                disabled={(status !== AppStatus.LIVE && !analysis) || status === AppStatus.ANALYZING || status === AppStatus.GENERATING_PROMPT}
-                className="px-8 py-3 bg-white text-black rounded-2xl font-bold hover:bg-blue-400 hover:text-white disabled:opacity-20 transition-all flex items-center gap-3"
+                disabled={(status !== AppStatus.LIVE && !analysis) || status === AppStatus.ANALYZING || status === AppStatus.GENERATING_PROMPT || status === AppStatus.LIVE}
+                className="px-8 py-3 bg-white text-black rounded-2xl font-black hover:bg-blue-400 hover:text-white disabled:opacity-20 transition-all flex items-center gap-3 shadow-xl"
               >
                 {status === AppStatus.GENERATING_PROMPT ? (
                    <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" /> Forging...</span>
@@ -396,8 +405,8 @@ const App: React.FC = () => {
       </main>
 
       <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex gap-4 z-50">
-          <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase transition-all border ${isLeftOpen ? 'bg-blue-500 border-blue-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Audit View</button>
-          <button onClick={() => setIsRightOpen(!isRightOpen)} className={`px-5 py-2 rounded-full text-[10px] font-bold uppercase transition-all border ${isRightOpen ? 'bg-purple-500 border-purple-400' : 'bg-white/5 border-white/10 text-white/40'}`}>Prompt View</button>
+          <button onClick={() => setIsLeftOpen(!isLeftOpen)} className={`px-6 py-2 rounded-full text-[10px] font-black uppercase transition-all border ${isLeftOpen ? 'bg-blue-500 border-blue-400 text-white shadow-lg' : 'bg-white/5 border-white/10 text-white/40'}`}>Audit View</button>
+          <button onClick={() => setIsRightOpen(!isRightOpen)} className={`px-6 py-2 rounded-full text-[10px] font-black uppercase transition-all border ${isRightOpen ? 'bg-purple-500 border-purple-400 text-white shadow-lg' : 'bg-white/5 border-white/10 text-white/40'}`}>Prompt View</button>
       </div>
     </div>
   );
